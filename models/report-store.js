@@ -1,65 +1,77 @@
-import { nanoid } from "nanoid";
-// temporary storage for reports. in a real app, this would be replaced by a database.
-const _reports = [];
+import { v4 as uuid } from "uuid";
 
-// HELPER FUNCTIONS 
-// safely converts a value into a number or returns null. handles empty strings, undefined, and invalid numbers
+// all reports are stored here
+const reports = [];
+
+// convert input to number or null if invalid/empty
 function toNumberOrNull(value) {
-  if (value === "" || value === undefined || value === null) return null;
-  const num = Number(value);
-  return Number.isFinite(num) ? num : null; // return number if valid, else null
-}
-// returns a valid ISO timestamp.if `t` is provided, return it as a string.if not, return the current date/time.
-function timeOrNow(t) {
-  return t ? String(t) : new Date().toISOString();
+  if (value === "" || value === undefined || value === null) {
+    return null; // empty or missing input
+  }
+  const number = Number(value);
+  return Number.isFinite(number) ? number : null; // valid number check
 }
 
-// REPORT STORE (CRUD Operations)
+// return time from input or current time now
+function timeOrNow(time) {
+  return time ? String(time) : new Date().toISOString(); // if no time passed, use now
+}
+
 export const reportStore = {
-
- 
-  // CREATE A NEW REPORT
-  async create({ stationId, code, temp, windSpeed, windDir, pressure, time, icon = null }) {
+  // create a new weather report for a station
+  async create(reportData) {
     const report = {
-      _id: nanoid(),                          // unique report ID
-      stationId: String(stationId),          // station ID 
-      code: toNumberOrNull(code),            // weather code
-      temp: toNumberOrNull(temp),            // temperature 
-      windSpeed: toNumberOrNull(windSpeed),  // wind speed 
-      windDir: toNumberOrNull(windDir),      // wind direction 
-      pressure: toNumberOrNull(pressure),    // atmospheric pressure
-      time: timeOrNow(time),                 // time of report 
-      icon,                                 // weather icon code from API
+      _id: uuid(), // unique report id
+      stationId: String(reportData.stationId), // station owner
+      code: toNumberOrNull(reportData.code), // weather code
+      temp: toNumberOrNull(reportData.temp), // temperature
+      windSpeed: toNumberOrNull(reportData.windSpeed), // wind km/h
+      windDir: toNumberOrNull(reportData.windDir), // wind degrees
+      pressure: toNumberOrNull(reportData.pressure), // air pressure
+      time: timeOrNow(reportData.time), // timestamp
+      icon: reportData.icon || null, // icon or null
     };
 
-    // save the report in memory
-    _reports.push(report);
-
-    return report; // return the created report
+    reports.push(report); // save to memory list
+    console.log(`report saved for station ${report.stationId}, total:`, reports.length);
+    return report; // return new report to controller
   },
 
-
-  // FIND ALL REPORTS FOR A STATION
+  // get all reports for one station sorted newest first
   async findByStationId(stationId) {
-    return _reports
-      .filter((r) => r.stationId === String(stationId))          // get reports for station
-      .sort((a, b) => new Date(b.time) - new Date(a.time));      // sort by most recent
-  },
+    const stationIdText = String(stationId);
+    const result = []; // store matching reports
 
-
-  // DELETE A SINGLE REPORT
-  async delete(reportId) {
-    const idx = _reports.findIndex((r) => r._id === reportId);
-    if (idx >= 0) _reports.splice(idx, 1); // remove report if found
-  },
-
-  // DELETE ALL REPORTS FOR A STATION
-  async deleteByStation(stationId) {
-    // loop backwards to safely delete while iterating
-    for (let i = _reports.length - 1; i >= 0; i--) {
-      if (_reports[i].stationId === String(stationId)) {
-        _reports.splice(i, 1); // remove matching report
+    for (const report of reports) {
+      if (report.stationId === stationIdText) {
+        result.push(report); // match found
       }
     }
+
+    // sort newest reading first using time
+    result.sort((a, b) => new Date(b.time) - new Date(a.time));
+    return result;
+  },
+
+  // delete one report by id
+  async delete(reportId) {
+    const index = reports.findIndex((r) => r._id === reportId);
+    if (index >= 0) {
+      reports.splice(index, 1); // remove from memory
+      console.log(`report removed, id:`, reportId);
+    }
+  },
+
+  // delete all reports for a station
+  async deleteByStation(stationId) {
+    const stationIdText = String(stationId);
+
+    for (let i = reports.length - 1; i >= 0; i--) {
+      if (reports[i].stationId === stationIdText) {
+        reports.splice(i, 1); // remove station reports
+      }
+    }
+
+    console.log(`all reports cleared for station`, stationId);
   },
 };

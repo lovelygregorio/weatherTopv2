@@ -1,13 +1,14 @@
-<h1 class="title">Welcome to WeatherTop Dashboard</h1>
-<p class="subtitle">Hello, {{firstname}} | Manage your stations below.</p>
+<h1 class="title">Welcome to Weathertop Dashboard</h1>
+<p class="subtitle">Hello, {{firstname}} . You can manage your stations here.</p>
 
-{{!-- map display --}}
+{{!-- leaflet map setup for showing station pins --}}
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
 
 <style>
+  /* simple map style */
   #stationsMap {
-    height: 350px;        
+    height: 350px;
     margin-bottom: 20px;
     border-radius: 10px;
   }
@@ -15,64 +16,70 @@
 
 <div class="box">
   <h2 class="title is-5">Stations Map</h2>
+  <!-- container where leaflet will draw the map -->
   <div id="stationsMap"></div>
 </div>
 
-{{!-- ======== add station form ========= --}}
+{{!-- add station form lets user create a new city or location --}}
 <div class="box">
   <h2 class="title is-5">Add Station</h2>
 
-  {{!-- form to add a new weather station --}}
-  {{!-- sends a POST request to /station --}}
+  <!-- form sends a post request to /station so server can save a station -->
   <form id="addStationForm" action="/station" method="post">
     <div class="columns">
       <div class="column">
-        <input class="input" name="name" placeholder="Name" required>
+        <!-- station name input -->
+        <input class="input" name="name" placeholder="name" required>
       </div>
       <div class="column">
-        <input class="input" name="lat" placeholder="Latitude">
+        <!-- optional latitude -->
+        <input class="input" name="lat" placeholder="latitude">
       </div>
       <div class="column">
-        <input class="input" name="lng" placeholder="Longitude">
+        <!-- optional longitude -->
+        <input class="input" name="lng" placeholder="longitude">
       </div>
       <div class="column is-narrow">
+        <!-- button to submit and create station -->
         <button class="button is-primary">Add Station</button>
       </div>
     </div>
   </form>
 </div>
 
-{{!-- ======= station list section ========= --}}
+{{!-- list of stations below the form --}}
 <div id="stationsList">
 {{#if stations.length}}
-  {{!-- loop through all stations and display each one --}}
+  {{!-- loop through each station object and draw a card --}}
   {{#each stations}}
   <div class="box mb-5 station-card" data-id="{{_id}}">
     
-    {{!-- station header (name, lat, lng, delete button) --}}
+    <!-- station header line with name, coords and delete button -->
     <div class="level">
       <div class="level-left station-header">
+        <!-- name links to station detail page -->
         <h2 class="title is-4">
           <a href="/station/{{_id}}">{{name}}</a>
         </h2>
-        {{#if lat}}<span class="coords">Lat: {{lat}}</span>{{/if}}
-        {{#if lng}}<span class="coords">Lng: {{lng}}</span>{{/if}}
+        {{#if lat}}<span class="coords">lat: {{lat}}</span>{{/if}}
+        {{#if lng}}<span class="coords">lng: {{lng}}</span>{{/if}}
       </div>
       <div class="level-right">
+        <!-- delete station form -->
         <form action="/station/{{_id}}/delete" method="post">
-          <button class="button is-danger is-light">Delete</button>
+          <button class="button is-danger is-light">delete</button>
         </form>
       </div>
     </div>
 
-    {{!-- ======== weather cards ================= --}}
+    {{!-- weather cards for this station --}}
     <div class="columns is-multiline">
       
-      {{!-- weather condition --}}
+      <!-- weather label and icon card -->
       <div class="column is-3">
         <div class="card dark">
           <div class="card-content has-text-centered">
-            <p class="title is-6">Weather</p>
+            <p class="title is-4"><span class="emoji-xl">⛅️</span>Weather</p>
             {{#if latest}}
               <figure class="image is-48x48" style="margin:auto;">
                 <img class="icon-img" src="{{latest.icon}}" alt="">
@@ -81,61 +88,62 @@
                 <span class="value">{{latest.label}}</span>
               </p>
             {{else}}
-              <p class="has-text-grey">No reports yet</p>
+              <p class="has-text-grey">No Reports yet</p>
             {{/if}}
           </div>
         </div>
       </div>
 
-      {{!-- temp card --}}
+      <!-- temperature card -->
       <div class="column is-3">
         <div class="card dark">
           <div class="card-content has-text-centered">
-            <p class="title is-6">Temp 🌡️</p>
+            <p class="title is-4"><span class="emoji-xl">🌡️</span> Temperature</p>
             {{#if latest}}
               <p class="metric">
-                <span class="value">{{latest.tempC}}°C</span>
-                ({{latest.tempF}}°F)
+                <span class="value">{{latest.tempC}}°c</span>
+                ({{latest.tempF}}°f)
               </p>
-              <p>Max: {{summary.temp.max}} | Min: {{summary.temp.min}}</p>
+              <!-- summary values come from helper in controller -->
+              <p>max: {{summary.temp.max}} | min: {{summary.temp.min}}</p>
             {{else}}
-              <p class="has-text-grey">—</p>
+              <p class="has-text-grey">No Data</p>
             {{/if}}
           </div>
         </div>
       </div>
 
-      {{!-- wind card --}}
+      <!-- wind card -->
       <div class="column is-3">
         <div class="card dark">
           <div class="card-content has-text-centered">
-            <p class="title is-6">Wind 💨</p>
+            <p class="title is-4" <span class="emoji-xl">💨</span> Wind</p>
             {{#if latest}}
               <p class="metric">
-                <span class="value">{{latest.windSpeed}} km/h</span>
-                (Bft {{latest.windBft}})
+                <span class="value">{{latest.windSpeed}} km per hour</span>
+                (beaufort {{latest.windBft}})
               </p>
               <p>{{latest.windDirLabel}}</p>
-              <p>Max: {{summary.wind.max}} | Min: {{summary.wind.min}}</p>
+              <p>max: {{summary.wind.max}} | min: {{summary.wind.min}}</p>
             {{else}}
-              <p class="has-text-grey">—</p>
+              <p class="has-text-grey">No Data</p>
             {{/if}}
           </div>
         </div>
       </div>
 
-      {{!-- pressure card --}}
+      <!-- pressure card -->
       <div class="column is-3">
         <div class="card dark">
           <div class="card-content has-text-centered">
-            <p class="title is-6">Pressure ⏲️</p>
+            <p class="title is-4"><span class="emoji-xl">⏲</span>Pressure</p>
             {{#if latest}}
               <p class="metric">
-                <span class="value">{{latest.pressure}} hPa</span>
+                <span class="value">{{latest.pressure}} hpa</span>
               </p>
-              <p>Max: {{summary.pressure.max}} | Min: {{summary.pressure.min}}</p>
+              <p>max: {{summary.pressure.max}} | min: {{summary.pressure.min}}</p>
             {{else}}
-              <p class="has-text-grey">—</p>
+              <p class="has-text-grey">no data</p>
             {{/if}}
           </div>
         </div>
@@ -144,19 +152,19 @@
   </div>
   {{/each}}
 {{else}}
-  <p id="emptyState">No stations yet. Please add one above.</p>
+  <!-- shown when there are no stations saved yet -->
+  <p id="emptyState">No Stations yet. Please add one above.</p>
 {{/if}}
 </div>
 
-{{!-- =============  map script leaflet  ============ --}}
+{{!-- leaflet map script for showing all stations on map --}}
 <script>
 window.addEventListener("load", function () {
-
-  // build a JS array of stations directly from hbs data
+  // build a simple javascript list of station objects from handlebars data
   var stations = [
     {{#each stations}}
       {
-        _id: "{{_id}}",
+        id: "{{_id}}",
         name: "{{name}}",
         lat: {{#if lat}}{{lat}}{{else}}null{{/if}},
         lng: {{#if lng}}{{lng}}{{else}}null{{/if}}
@@ -164,29 +172,34 @@ window.addEventListener("load", function () {
     {{/each}}
   ];
 
-  // create the leaflet map and set default view ireland
+  // create the leaflet map and set center over ireland
   var map = L.map("stationsMap").setView([53.4, -7.9], 6);
 
-  // add OpenStreetMap tiles to the map
+  // add openstreetmap tiles as the base map
   L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
-    attribution: '&copy; OpenStreetMap contributors'
+    attribution: "map data by openstreetmap"
   }).addTo(map);
 
-  // create a group for pins (markers)
+  // group will hold all station markers
   var group = L.featureGroup().addTo(map);
 
-  // loop through stations and add pins for each valid lat/lng
-  stations.forEach(function(s) {
-    if (Number.isFinite(s.lat) && Number.isFinite(s.lng)) {
-      L.marker([s.lat, s.lng])
-        .addTo(group)
-        .bindPopup("<strong>" + (s.name || "Station") + "</strong><br>Lat: " + s.lat + ", Lng: " + s.lng);
-    }
-  });
+  // loop through the station list and add markers for valid coordinates
+  for (var i = 0; i < stations.length; i++) {
+    var s = stations[i];
 
-  // if there are pins, adjust map zoom to fit all stations
-  if (group.getLayers().length) {
+    // check that lat and lng are numbers
+    if (typeof s.lat === "number" && typeof s.lng === "number") {
+      var marker = L.marker([s.lat, s.lng]).addTo(group);
+      marker.bindPopup(
+        "<strong>" + (s.name || "station") + "</strong><br>" +
+        "lat: " + s.lat + ", lng: " + s.lng
+      );
+    }
+  }
+
+  // if at least one marker is on the map, fit the map to show all
+  if (group.getLayers().length > 0) {
     map.fitBounds(group.getBounds().pad(0.3));
   }
 });

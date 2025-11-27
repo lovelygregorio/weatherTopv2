@@ -1,4 +1,3 @@
-import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
@@ -7,101 +6,61 @@ import session from "express-session";
 import { engine } from "express-handlebars";
 import { router } from "./routes.js";
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// load env vars
+dotenv.config();
 
-
-const candidates = [
-  path.join(__dirname, ".env"),     
-  path.join(process.cwd(), ".env"), 
-  path.resolve(".env"),             
-];
-
-let loadedFrom = null;
-for (const p of candidates) {
-  const exists = fs.existsSync(p);
-  console.log(`[env] probe: ${p} exists=${exists}`);
-  if (!exists) continue;
-  const result = dotenv.config({ path: p, override: true });
-  if (!result.error) {
-    loadedFrom = p;
-    break;
-  }
-}
-if (!loadedFrom) {
-  const fallback = dotenv.config();
-  if (!fallback.error) loadedFrom = "(dotenv default lookup)";
-}
-console.log(`[env] loaded from: ${loadedFrom || "NONE"}`);
-console.log(
-  `[env] OPENWEATHER_KEY loaded? ${!!process.env.OPENWEATHER_KEY} ${
-    (process.env.OPENWEATHER_KEY || "").slice(-6)
-      ? "(..." + (process.env.OPENWEATHER_KEY || "").slice(-6) + ")"
-      : ""
-  }`
-);
-
+// recreate dirname for es modules
+const __filename = fileURLToPath(import.meta.url); // convert module url to path
+const __dirname = path.dirname(__filename);        // get current folder
 
 const app = express();
 
-// body parsers
-app.use(express.urlencoded({ extended: true }));
-app.use(express.json());
+// register handlebars (.hbs)
+app.engine(".hbs", engine({
+  extname: ".hbs",                         // file extension
+  defaultLayout: "main",                   // main layout wrapper
+  layoutsDir: path.join(__dirname, "views/layouts"), // layouts folder
+  partialsDir: path.join(__dirname, "views/partials"), // partial ui folder
+}));
 
-// session
+// set view engine
+app.set("view engine", ".hbs");
+app.set("views", path.join(__dirname, "views")); // main hbs views folder
+
+// parse form + json + static assets
+app.use(express.urlencoded({ extended: true })); // read form body
+app.use(express.json());                         // read json body
+app.use(express.static(path.join(__dirname, "public"))); // static files
+
+// enable sessions
 app.use(
   session({
-    secret: process.env.SESSION_SECRET || "dev-secret-change-me",
-    resave: false,
-    saveUninitialized: false,
-    cookie: { httpOnly: true, maxAge: 24 * 60 * 60 * 1000 },
+    secret: "weatherapp-secret", // encrypt session
+    resave: false,               // no resave if unchanged
+    saveUninitialized: false,    // no empty sessions
   })
 );
 
-// make session available in views
-app.use((req, res, next) => {
-  res.locals.session = req.session;
+// expose session to views as {{session}}
+app.use((request, response, next) => {
+  response.locals.session = request.session;
   next();
 });
 
-// handlebars
-app.engine(
-  ".hbs",
-  engine({
-    extname: ".hbs",
-    defaultLayout: "main",
-    partialsDir: path.join(__dirname, "views/partials"),
-    helpers: {
-      eq: (a, b) => a === b,
-      json: (v) => JSON.stringify(v),
-    },
-  })
-);
-app.set("view engine", ".hbs");
-app.set("views", path.join(__dirname, "views"));
-
-// static assets
-app.use(express.static(path.join(__dirname, "public")));
-
-// set DEV_AUTOLOGIN
-if (String(process.env.DEV_AUTOLOGIN).toLowerCase() === "true") {
-  app.use((req, res, next) => {
-    if (!req.session.user) req.session.user = { _id: "dev-user-1", firstName: "Lovely" };
-    next();
-  });
-}
-
-// routes
+// mount routes
 app.use("/", router);
 
-// error handler
-app.use((err, req, res, next) => {
-  console.error("[server:error]", err);
-  if (res.headersSent) return next(err);
-  res.status(500).render("error-view", { title: "Server Error", message: err?.message || "Unexpected error" });
+// global error fallback
+app.use((error, request, response, next) => {
+  console.error("server error:", error); // log it
+  response.status(500).render("error-view", {
+    title: "server error",
+    message: "something went wrong.",
+  });
 });
 
+// start server
 const PORT = process.env.PORT || 4000;
 app.listen(PORT, () => {
-  console.log(`WeatherTop running on http://localhost:${PORT}`);
+  console.log(`weathertop running at port ${PORT}`); // server start log
 });

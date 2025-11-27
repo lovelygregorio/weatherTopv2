@@ -6,29 +6,28 @@
 
     <!-- station forecast title -->
     <h1 class="title">{{station.name}} Forecast</h1>
- <p class="is-size-5">
-  🕒 Local time: <strong id="nowTime">—:—</strong>
-</p>
+    <p class="is-size-5">
+      🕒 Local time: <strong id="nowTime">—:—</strong>
+    </p>
 
-  
     <!-- ========= current conditions ========= -->
     <div class="columns is-multiline">
       <div class="column is-12">
         <div class="box soft-card has-text-centered current-box">
           <div class="current-wrap">
             {{#if current.iconUrl}}
-              <!-- Weather Icon -->
+              <!-- weather icon from openweather -->
               <img class="owm-icon" src="{{current.iconUrl}}" alt="{{current.desc}}">
             {{/if}}
             <!-- current temperature -->
             <h1 class="is-size-1 current-temp">{{current.temp}}°C</h1>
           </div>
-          <!-- feels Like & description -->
+          <!-- feels like text and description -->
           <p class="has-text-grey">Feels like {{current.feels}}°C · {{current.desc}}</p>
         </div>
       </div>
 
-    <!-- ========= STAT cards (location, wind, pressure, humidity)========= -->
+      <!-- ========= stat cards (location, wind, pressure, humidity)========= -->
       <!-- location -->
       <div class="column is-3">
         <div class="box soft-card stat-card">
@@ -76,7 +75,7 @@
       </div>
     </div>
 
-        <!-- ========= location map (openStreetMap)========= -->
+    <!-- ========= location map (openstreetmap)========= -->
     {{#if station.lat}}
       <div class="box soft-card">
         <h3 class="title is-6 mb-3">Map</h3>
@@ -86,13 +85,13 @@
       </div>
     {{/if}}
 
-   <!-- ========= hourly forecast graph (next 48 hrs)========= -->
+    <!-- ========= hourly forecast graph (next 48 hrs)========= -->
     <div class="box soft-card">
       <h2 class="title is-5">Hourly Forecast (Next 48 Hours)</h2>
       <canvas id="hourlyChart" height="160"></canvas>
     </div>
 
-   <!-- ========= 5 day forecast ========= -->
+    <!-- ========= 5 day forecast ========= -->
     <div class="box soft-card">
       <h2 class="title is-5">5 Day Forecast</h2>
       <div id="dailyCards" class="columns is-desktop is-variable is-2"></div>
@@ -100,7 +99,7 @@
   </div>
 </section>
 
-   <!-- ========= page styl e========= -->
+<!-- ========= page style ========= -->
 <style>
   .soft-card { border: 1px solid #e9eef6; border-radius: 14px; background: #f7faff; }
   .map-iframe { width: 100%; height: 260px; border: 0; border-radius: 10px; }
@@ -116,66 +115,111 @@
   .stat-value { font-weight: 600; }
 </style>
 
-<!-- chat js for grapghs -->
+
+
+
+
+<!-- chart graph js library -->
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
-
 <script>
-  (function initClock() {
-    const elTime = document.getElementById('nowTime');
-    const elTz = document.getElementById('tzName');
-    const fallbackTz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+// show local time and update every minute
+(function initClock() {
+  const elTime = document.getElementById("nowTime");
+  const elTz = document.getElementById("tzName");
 
-    const tz = (elTz && elTz.textContent.trim()) ? elTz.textContent.trim() : fallbackTz;
-    if (elTz && !elTz.textContent.trim()) elTz.textContent = tz;
+  let tz = "";
+  try {
+    // get system timezone name
+    tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  } catch (e) {
+    tz = "";
+  }
 
-    // render local time based on station's timezone
-    function render() {
-      try {
-        elTime.textContent = new Date().toLocaleTimeString([], {
-          hour: '2-digit', minute: '2-digit', hour12: false, timeZone: tz
-        });
-      } catch {
-        elTime.textContent = new Date().toLocaleTimeString([], {
-          hour: '2-digit', minute: '2-digit', hour12: false
-        });
-      }
+  if (elTz && !elTz.textContent.trim()) {
+    // display timezone in page if empty
+    elTz.textContent = tz;
+  }
+
+// run time update 
+  function updateClock() {
+    const now = new Date();
+    try {
+      // show time in 24 hour format
+      elTime.textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+        timeZone: tz || undefined
+      });
+    } catch (e) {
+      elTime.textContent = now.toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false
+      });
     }
+  }
 
-    // update the time every minute
-    function scheduleNextMinute() {
-      const now = new Date();
-      const ms = (60 - now.getSeconds()) * 1000 - now.getMilliseconds();
-      setTimeout(() => { render(); scheduleNextMinute(); }, Math.max(ms, 250));
-    }
+  updateClock(); // update time every minute
+  setInterval(updateClock, 60000);
+})();
 
-    render();
-    scheduleNextMinute();
-  })();
+// load data from server into arrays
+const HOURLY = {{{hourlyJson}}} || [];
+const DAILY  = {{{dailyJson}}}  || [];
 
-  /* ============ data from controller ================== */
-  const HOURLY = {{{hourlyJson}}}; // 48 hours of hourly forecast
-  const DAILY  = {{{dailyJson}}};  // 5-day forecast
+console.log("hourly data from server:", HOURLY);
+console.log("daily data from server:", DAILY);
 
-    /* ============ hourly forecast chart JS ================== */
-  const ctx = document.getElementById('hourlyChart');
-  const next48Hours = HOURLY.slice(0, 16); // 16 data points -3-hour intervals = 48 hours-
+// ================= hourly forecast chart =================
 
-  new Chart(ctx, {
-    type: 'line',
+ // check if hourly graph canvas exists
+const ctx = document.getElementById("hourlyChart");
+
+if (!ctx) {
+  console.log("no canvas with id hourlyChart found");
+} else if (!Array.isArray(HOURLY) || HOURLY.length === 0) {
+  console.log("hourly array is empty, chart not drawn");
+} else {
+  // take first 16 readings (48 hours)
+  const next48Hours = [];
+  const limit = 16;
+
+  // collect forecast using a normal for loop
+  for (let i = 0; i < limit && i < HOURLY.length; i = i + 1) {
+    next48Hours.push(HOURLY[i]);
+  }
+
+  // build label and temp arrays: list for chart values
+  const labels = [];
+  const temps  = [];
+  const descs  = [];
+  const pops   = [];
+
+
+// fill lists for chart display
+  for (let j = 0; j < next48Hours.length; j = j + 1) {
+    const h = next48Hours[j];
+    labels.push(h.time.slice(11, 16));   // hh:mm
+    temps.push(h.temp);
+    descs.push(h.desc || "—");
+    pops.push(h.pop || 0);
+  }
+
+  console.log("chart labels:", labels);
+  console.log("chart temps:", temps);
+
+  const hourlyChart = new Chart(ctx, {
+    type: "line",
     data: {
-      labels: next48Hours.map(h => h.time.slice(11, 16)), 
+      labels: labels,
       datasets: [{
-        label: 'Temperature (°C)',
-        data: next48Hours.map(h => h.temp), 
+        label: "temperature (°c)",
+        data: temps,
         borderWidth: 2,
-        borderColor: '#0077cc',
-        backgroundColor: 'rgba(0, 119, 204, 0.15)',
         fill: true,
-        tension: 0.3,
-        pointRadius: 5,
-        pointHoverRadius: 7,
-        pointBackgroundColor: '#0077cc'
+        tension: 0.3
       }]
     },
     options: {
@@ -183,56 +227,64 @@
       plugins: {
         legend: { display: false },
         tooltip: {
-          usePointStyle: true,
           callbacks: {
-            label: (ctx) => {
-              const i = ctx.dataIndex, h = next48Hours[i];
-              return ` ${h.temp}°C · ${h.desc || "—"}`;
+            label: function (context) {
+              const i = context.dataIndex;
+              return temps[i] + "°c · " + descs[i];
             },
-            afterLabel: (ctx) => {
-              const i = ctx.dataIndex, h = next48Hours[i];
-              return h.pop ? `Precipitation: ${h.pop}%` : '';
-            },
-            labelPointStyle: (ctx) => {
-              const i = ctx.dataIndex, h = next48Hours[i];
-              if (h.iconUrl) {
-                const img = new Image(40, 40);
-                img.src = h.iconUrl;
-                return { pointStyle: img, rotation: 0 };
+            afterLabel: function (context) {
+              const i = context.dataIndex;
+              if (pops[i]) {
+                return "pop: " + pops[i] + "%";
               }
-              return { pointStyle: 'circle', rotation: 0 };
+              return "";
             }
           }
         }
       },
-      scales: {
-        x: {
-          grid: { display: false },
-          title: { display: true, text: 'Time', color: '#333', font: { weight: '600' } }
-        },
-        y: {
-          grid: { color: 'rgba(0,0,0,0.06)' },
-          title: { display: true, text: 'Temperature (°C)', color: '#333', font: { weight: '600' } }
-        }
+      scales: {. // labels for x and y axes
+        x: { title: { display: true, text: "time" } },
+        y: { title: { display: true, text: "temperature (°c)" } }
       }
     }
   });
+}
 
-  /* ============  5day forecast ============== */
-  const dailyRoot = document.getElementById('dailyCards');
-  DAILY.slice(0, 5).forEach(d => {
-    const col = document.createElement('div');
+// ================= 5 day forecast cards =================
+
+// check if daily card container exists
+const dailyRoot = document.getElementById("dailyCards");
+
+if (!dailyRoot) {
+  console.log("no dailyCards container found");
+} else if (!Array.isArray(DAILY) || DAILY.length === 0) {
+  console.log("daily array is empty, cards not drawn");
+} else {   // build 5 daily weather forecast cards
+  for (let k = 0; k < 5 && k < DAILY.length; k = k + 1) {
+    const d = DAILY[k];
+
+    const col = document.createElement("div");
     col.className = "column is-one-fifth is-one-third-tablet is-half-mobile";
 
-    // build each forecast card dynamically
-    col.innerHTML = `
-      <div class="box soft-card has-text-centered">
-        <p class="is-size-6"><strong>${new Date(d.date).toLocaleDateString(undefined, { weekday: 'short' })}</strong></p>
-        ${d.iconUrl ? `<img class="owm-icon" src="${d.iconUrl}" alt="${d.desc || ''}">` : ""}
-        <p class="mt-1">${Math.round(d.tmax)}° / ${Math.round(d.tmin)}°</p>
-        <p>${d.desc || "—"}</p>
-        <p>POP: ${d.pop}%</p>
-      </div>`;
+    const weekday = d.date  // get weekday short name
+      ? new Date(d.date).toLocaleDateString([], { weekday: "short" })
+      : "—";
+
+    const iconHtml = d.iconUrl // build icon html if exists
+      ? '<img class="owm-icon" src="' + d.iconUrl + '" alt="' + (d.desc || "") + '">'
+      : "";
+
+ // compose card html
+    col.innerHTML = 
+      '<div class="box soft-card has-text-centered">' +
+        '<p class="is-size-6"><strong>' + weekday + "</strong></p>" +
+        iconHtml +
+        '<p class="mt-1">' + Math.round(d.tmax) + "° / " + Math.round(d.tmin) + "°</p>" +
+        "<p>" + (d.desc || "—") + "</p>" +
+        "<p>POP: " + (d.pop || 0) + "%</p>" +
+      "</div>";
+
     dailyRoot.appendChild(col);
-  });
+  }
+}
 </script>

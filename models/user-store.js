@@ -1,54 +1,55 @@
-import { nanoid } from "nanoid";
-// temporary storage for user accounts.
-const _users = [];
-// USER STORE- CRUD OPERATIONS
+import { v4 as uuid } from "uuid";
+
+const users = [];
+
 export const userStore = {
 
-  // CREATE A NEW USER
+  // create a new user and save to array
   async create({ firstName, lastName, email, password }) {
     const user = {
-      _id: nanoid(),                                   // unique ID for this user
-      firstName: String(firstName || "").trim(),       // clean & store first name
-      lastName: String(lastName || "").trim(),         // clean & store last name
-      email: String(email || "").trim().toLowerCase(), // store lowercase email for consistency
-      password: String(password || ""),                // store password as plain text
+      _id: uuid(), // unique user id
+      firstName: String(firstName || "").trim(), // convert input to text and trim spaces
+      lastName: String(lastName || "").trim(),  // convert input to text and trim spaces
+      email: String(email || "").trim().toLowerCase(), // save email in small caps to avoid mismatch
+      password: String(password || ""), // save password as text
     };
 
-    // save the user in memory
-    _users.push(user);
-
-    // return the created user so controllers can use it
-    return user;
+    users.push(user); // store in memory list
+    return user; // return new user to controller
   },
 
-  // FIND USER BY EMAIL
+  // find a user by email 
   async findByEmail(email) {
-    return (
-      _users.find(
-        (user) => user.email === String(email || "").trim().toLowerCase()
-      ) || null
-    );
+    const cleanedEmail = String(email || "").trim().toLowerCase(); // clean email input
+    const user = users.find((u) => u.email === cleanedEmail); // check if email matches stored one
+    return user || null; // return user or null if none
   },
 
-  // FIND USER BY ID
+  // find a user by id
   async findById(id) {
-    return _users.find((user) => user._id === id) || null;
+    return users.find((u) => u._id === id) || null; // return user or null if missing
   },
 
-  // UPDATE USER DETAILS
-  async update(id, { firstName, lastName, email, password }) {
-    // Find the existing user first
-    const user = await this.findById(id);
-    if (!user) return null; 
+  // update user fields by id (profile settings uses this)
+  //  avoids overwriting missing fields)
+  async update(id, updatedFields) {
+    const user = await this.findById(id); // lookup user
+    if (!user) return null; // exit early if user not found
 
-    // update only the provided fields and keep others unchanged
-    if (firstName !== undefined) user.firstName = String(firstName).trim();
-    if (lastName !== undefined) user.lastName = String(lastName).trim();
-    if (email !== undefined) user.email = String(email).trim().toLowerCase();
-    if (password !== undefined && password !== "") {
-      user.password = String(password);
+    // update only if field was sent from form
+    if (updatedFields.firstName !== undefined) {
+      user.firstName = String(updatedFields.firstName).trim();
+    }
+    if (updatedFields.lastName !== undefined) {
+      user.lastName = String(updatedFields.lastName).trim();
+    }
+    if (updatedFields.email !== undefined) {
+      user.email = String(updatedFields.email).trim().toLowerCase();
+    }
+    if (updatedFields.password !== undefined && updatedFields.password !== "") {
+      user.password = String(updatedFields.password);
     }
 
-    return user; // return updated user
+    return user; // send updated user back to controller
   },
 };

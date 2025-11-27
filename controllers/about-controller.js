@@ -1,7 +1,11 @@
-
 export const aboutController = {
-  index(req, res) {
-    const viewData = { title: "WeatherTop" };
-    res.render("about-view", viewData);
+  
+  // show the about page
+  index(request, response) {
+    const viewData = {
+      title: "WeatherTop",
+    };
+
+    response.render("about-view", viewData);
   },
 };

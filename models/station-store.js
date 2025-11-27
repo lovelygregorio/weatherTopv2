@@ -1,51 +1,77 @@
-// nanoid -generates unique IDs for each station (instead of using database IDs)
-import { nanoid } from "nanoid";
+import { v4 as uuid } from "uuid"; // uuid: built-in helper to generate unique ids for stations/reports
 
-const _stations = [];
+// in-memory list of stations while server runs
+// resets if server restarts
+const stations = [];
 
-
-// STATION STORE (CRUD Operations)
 export const stationStore = {
-
-  // CREATE A NEW STATION
-  async create({ userId, name, lat = null, lng = null }) {
+  // create station and add to list
+  async create(stationData) {
     const station = {
-      _id: nanoid(),                     // unique station ID 
-      userId: String(userId),           // link station to its owner (always stored as string)
-      name: String(name || "").trim(),  // clean station name (remove spaces if any)
-      lat: lat === "" ? null : Number(lat), // convert latitude to number or set null
-      lng: lng === "" ? null : Number(lng), // convert longitude to number or set null
-      createdAt: new Date().toISOString(), // timestamp when station was created
+      _id: uuid(), // unique id for each station
+      userId: String(stationData.userId), // owner of the station
+      name: String(stationData.name || "").trim(), // city/station name
+      lat: stationData.lat ? Number(stationData.lat) : null, // latitude
+      lng: stationData.lng ? Number(stationData.lng) : null, // longitude
+      reports: [], // store manual weather readings
     };
 
-    // save the new station into our in-memory "database"
-    _stations.push(station);
-
-    // return the created station so controller can use it
-    return station;
+    stations.push(station); // save in memory list
+    return station; // return new station to controller
   },
 
-  // FIND STATIONS BY USER
-  async findByUser(userId) {
-    return _stations
-      .filter((station) => station.userId === String(userId)) // filter by owner
-      .sort((a, b) => a.name.localeCompare(b.name));          // sort alphabetically by name
-  },
-
-  // FIND A STATION BY ID
+  // lookup station by id
   async findById(id) {
-    return _stations.find((station) => station._id === id) || null;
+    return stations.find((s) => s._id === id) || null;
   },
 
-  // DELETE A STATION
-  async delete(id) {
-    const index = _stations.findIndex((station) => station._id === id);
-    if (index !== -1) {
-      _stations.splice(index, 1); // Remove station from the array
-    }
+  // return only stations for a user
+  async findByUser(userId) {
+    return stations.filter((s) => s.userId === String(userId));
   },
-  // GET ALL STATIONS
-  async all() {
-    return [..._stations]; // return a copy so no accidentally mutate the original array
+
+  // return all stations (dashboard uses this)
+  async getAllStations() {
+    return stations;
+  },
+
+  // delete one station by id
+  async delete(id) {
+    const index = stations.findIndex((s) => s._id === id);
+    if (index >= 0) stations.splice(index, 1);
+  },
+
+  // clear all stations
+  async deleteAll() {
+    stations.length = 0;
+  },
+
+  // add manual weather report to a station
+  async addReport(stationId, reportData) {
+    const station = await this.findById(stationId);
+    if (!station) return null; // exit if station missing
+
+    const report = {
+      _id: uuid(), // unique report id
+      time: new Date().toISOString(), // timestamp for sorting/display
+      code: Number(reportData.code), // weather code
+      temp: Number(reportData.temp), // temperature
+      windSpeed: Number(reportData.windSpeed), // wind speed
+      windDir: Number(reportData.windDir), // wind direction (deg)
+      pressure: Number(reportData.pressure), // air pressure
+    };
+
+    station.reports.push(report); // save report in station
+    console.log(`report added for ${station.name}, total:`, station.reports.length);
+    return report;
+  },
+
+  // delete a manual weather report from a station
+  async deleteReport(stationId, reportId) {
+    const station = await this.findById(stationId);
+    if (!station || !station.reports) return;
+
+    station.reports = station.reports.filter((r) => r._id !== reportId);
+    console.log(`report deleted for ${station.name}, remaining:`, station.reports.length);
   },
 };

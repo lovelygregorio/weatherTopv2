@@ -1,201 +1,207 @@
-import "dotenv/config";
-import axios from "axios";
-import { stationStore } from "../models/station-store.js";
-import { reportStore } from "../models/report-store.js";
-
-// utility to calculate station summary (min/max temps, wind, etc.)
-import { stationSummary } from "../utils/calc-utils.js";
-
-// weather-related utilities for formatting data
-import {
-  labelFor,         
-  iconUrlFor,      
-  beaufort,        
-  directionLabel,  
-  toF             
-} from "../utils/weather-utils.js";
-
-// import function to auto-generate reports using live OpenWeather data
-import { autoGenerateForStation } from "./report-controller.js";
+// handles create, view and delete for stations and also talks to openweather api to auto-add a first reading
+import "dotenv/config";     // load env vars like api key
+import axios from "axios";  // for api calls
+import { v4 as uuid } from "uuid";  // unique ids for readings
+import { stationStore } from "../models/station-store.js"; // station data store
 
 
-// OpenWeather API key from the .env file
-const API_KEY = process.env.OPENWEATHER_KEY;
+const API_KEY = process.env.OPENWEATHER_KEY; // openweather api key from .env
 
-// OpenWeather geocoding endpoint - convert station name to latitude & longitude
-const OWM_GEOCODE = "https://api.openweathermap.org/geo/1.0/direct";
+// OpenWeather endpoints
+const GEO_URL = "http://api.openweathermap.org/geo/1.0/direct";
+const CURRENT_URL = "https://api.openweathermap.org/data/2.5/weather";
 
+// --------------- helper functions ---------------
 
-// used when a station is created without latitude/longitude.
-// calls OpenWeather to find coordinates based on station name.
-async function geocodeByName(name) {
-  if (!API_KEY || !name) return null;
-
-  try {
-    // call OpenWeather geocode API
-    const resp = await axios.get(OWM_GEOCODE, {
-      params: { q: name, limit: 1, appid: API_KEY },
-      timeout: 8000, // 8-second timeout in case API is slow
-    });
-
-    // extract the first location match
-    const hit = Array.isArray(resp.data) ? resp.data[0] : null;
-    if (!hit) return null;
-
-    // return lat/lng as object
-    return { lat: hit.lat, lng: hit.lon };
-  } catch (err) {
-    console.warn("Geocode failed:", err?.message || err);
-    return null;
-  }
+// convert m/s from API to km/h for display
+function toKmH(mps) {
+  return Math.round(mps * 3.6);
 }
 
+// simple label for weather code
+function labelFor(code) {
+  const c = Number(code);
+  if (c === 800) return "Clear";
+  if (c >= 801 && c <= 804) return "Clouds";
+  if (c >= 500 && c <= 531) return "Rain";
+  if (c >= 200 && c <= 232) return "Thunderstorm";
+  if (c >= 600 && c <= 622) return "Snow";
+  if (c >= 701 && c <= 781) return "Fog / Mist";
+  return "Weather";
+}
 
+// map wind degrees to compass direction (N, NE, E, SE, S, SW, W, NW)
+function windDirLabel(deg) {
+  const d = ((Number(deg) % 360) + 360) % 360; // normalise 0–359
+  const dirs = ["N", "NE", "E", "SE", "S", "SW", "W", "NW", "N"];
+  const i = Math.round(d / 45);
+  return dirs[i];
+}
 
-// STATION CONTROLLER
+// build summary stats (max/min) from readings array
+function buildSummary(readings) {
+  if (!readings || readings.length === 0) return null;
+
+  const temps = readings
+    .map((r) => Number(r.tempC))
+    .filter((v) => !Number.isNaN(v));
+  const winds = readings
+    .map((r) => Number(r.windSpeed))
+    .filter((v) => !Number.isNaN(v));
+  const pressures = readings
+    .map((r) => Number(r.pressure))
+    .filter((v) => !Number.isNaN(v));
+
+  const tempMax = temps.length ? Math.max(...temps) : null;
+  const tempMin = temps.length ? Math.min(...temps) : null;
+  const windMax = winds.length ? Math.max(...winds) : null;
+  const windMin = winds.length ? Math.min(...winds) : null;
+  const pressMax = pressures.length ? Math.max(...pressures) : null;
+  const pressMin = pressures.length ? Math.min(...pressures) : null;
+
+  return {
+    temp: {
+      max: tempMax !== null ? tempMax.toFixed(1) : "—",
+      min: tempMin !== null ? tempMin.toFixed(1) : "—",
+    },
+    wind: {
+      max: windMax !== null ? windMax.toFixed(1) : "—",
+      min: windMin !== null ? windMin.toFixed(1) : "—",
+    },
+    pressure: {
+      max: pressMax !== null ? pressMax : "—",
+      min: pressMin !== null ? pressMin : "—",
+    },
+  };
+}
+
 export const stationController = {
-  
+  // GET /station/:id  — station detail page
+  async index(request, response) {
+    const stationId = request.params.id;
+    const station = await stationStore.findById(stationId);
 
-  // VIEW A STATION PAGE
-  async index(req, res) {
-    const { id } = req.params; // station ID from URL
-    const station = await stationStore.findById(id);
-
-    // if station doesn't exist to show 404 page
     if (!station) {
-      return res
-        .status(404)
-        .render("error-view", { title: "Not Found", message: "Station not found." });
+      return response.render("error-view", {
+        title: "Error",
+        message: "Station not found",
+      });
     }
 
-    // fetch reports for this station
-    let reports = [];
-    try {
-      if (typeof reportStore.findByStationId === "function") {
-        reports = await reportStore.findByStationId(id);
-      } else if (Array.isArray(station.reports)) {
-        // fallback if station already has reports embedded
-        reports = station.reports;
-      }
-    } catch (e) {
-      console.warn("Fetching reports failed:", e?.message || e);
+    // auto-generated readings from OpenWeather () used for the cards and summary)
+    const readings = station.readings || [];
+
+    // manual reports you add from the form (used for the reports table)
+    const reports = station.reports || [];
+
+    const last = readings[readings.length - 1];
+
+    let latest = null;
+    let summary = null;
+
+    // latest card data based on last reading
+    if (last) {
+      latest = {
+        icon: last.icon || "/images/default-weather.png",
+        label: last.label || "",
+        tempC: last.tempC,
+        windSpeed: last.windSpeed,
+        windDirLabel: last.windDirLabel || windDirLabel(last.windDirection),
+        pressure: last.pressure,
+        humidity: last.humidity,
+      };
+      summary = buildSummary(readings);
     }
 
-    //get summary stats for this station (min/max/avg values)
-    const summary = stationSummary(reports);
-    const latest = summary?.latest; // most recent report
-
-    // prepare latest weather view model for template
-    const latestVM = latest
-      ? {
-          code: latest.code,                     
-          label: labelFor(latest.code),            
-          icon: iconUrlFor(latest.code),            
-          tempC: latest.temp,                       
-          tempF: toF(latest.temp),                  
-          windBft: beaufort(latest.windSpeed),      
-          windSpeed: latest.windSpeed,              
-          windDirLabel: directionLabel(latest.windDir), 
-          pressure: latest.pressure,               
-          time: latest.time,                        
-        }
-      : null;
-
-    // render station page view
-    return res.render("station-view", {
+    return response.render("station-view", {
       title: station.name,
       station,
+      readings, // used by summary and cards
+      reports,  // used by each reports in station-view.hbs
+      latest,
       summary,
-      latest: latestVM,
-      reports,
     });
   },
 
+  // create a new station and auto-generate first api reading
+  async createStation(request, response) {
+    const user = request.session.user;
 
-  // CREATE A NEW STATION
-  async createStation(req, res) {
+    // create basic station (lat and lng can be blank if name only)
+    const station = await stationStore.create({
+      userId: user?._id || "",
+      name: request.body.name,
+      lat: request.body.lat,
+      lng: request.body.lng,
+    });
+
+    // try to get a first reading from openweather api
     try {
-      const user = req.session.user; // logged-in user info
-      if (!user?._id) throw new Error("Not logged in");
+      if (API_KEY && station.name) {
 
-      // get and clean up inputs from form
-      const nameInput = (req.body.name || "").trim();
-      let latInput = (req.body.lat ?? "").toString().trim();
-      let lngInput = (req.body.lng ?? "").toString().trim();
+        // if lat/lng missing, geocode by name
+        if (!station.lat || !station.lng) {
+          const geoRes = await axios.get(GEO_URL, {
+            params: { q: station.name, limit: 1, appid: API_KEY },
+          });
 
-      // validate required station name
-      if (!nameInput) {
-        return res
-          .status(400)
-          .render("error-view", { title: "Bad Request", message: "Name is required." });
-      }
+          const results = geoRes.data;
+          if (results && results.length > 0) {
+            station.lat = results[0].lat;
+            station.lng = results[0].lon;
+          }
+        }
 
-      // if no coordinates provided, attempt to auto-geocode via OpenWeather
-      if ((!latInput || !lngInput) && API_KEY) {
-        const coords = await geocodeByName(nameInput);
-        if (coords) {
-          latInput = String(coords.lat);
-          lngInput = String(coords.lng);
+       // if coords present, call current weather api
+        if (station.lat && station.lng) {
+          const weatherRes = await axios.get(CURRENT_URL, {
+            params: {
+              lat: station.lat,
+              lon: station.lng,
+              units: "metric",
+              appid: API_KEY,
+            },
+          });
+
+          const d = weatherRes.data;
+          const w = d.weather && d.weather[0] ? d.weather[0] : {};
+
+          const iconUrl = w.icon
+            ? `https://openweathermap.org/img/wn/${w.icon}@2x.png`
+            : null;
+
+           // build one reading object from api response
+          const reading = {
+            _id: uuid(),
+            code: w.id,
+            label: labelFor(w.id),
+            icon: iconUrl,
+            tempC: d.main.temp,
+            windSpeed: toKmH(d.wind.speed),
+            windDirection: d.wind.deg,
+            windDirLabel: windDirLabel(d.wind.deg),
+            pressure: d.main.pressure,
+            humidity: d.main.humidity,
+            time: new Date().toISOString(),
+            description: w.description || "",
+          };
+
+          if (!station.readings) station.readings = [];
+          station.readings.push(reading);
         }
       }
-
-      // convert lat/lng to numbers (null if invalid)
-      const latNum = latInput ? Number(latInput) : null;
-      const lngNum = lngInput ? Number(lngInput) : null;
-
-      // Save the new station into the database
-      const station = await stationStore.create({
-        userId: user._id,
-        name: nameInput,
-        lat: Number.isFinite(latNum) ? latNum : null,
-        lng: Number.isFinite(lngNum) ? lngNum : null,
-      });
-
-      // try auto-generating an initial report for the new station
-      try {
-        if (typeof autoGenerateForStation === "function") {
-          await autoGenerateForStation(station._id);
-        }
-      } catch (e) {
-        console.warn("Autogen skipped:", e?.message || e);
-      }
-
-      // redirect to dashboard when successful
-      return res.redirect("/dashboard");
     } catch (err) {
-      console.error("createStation error:", err);
-      return res
-        .status(500)
-        .render("error-view", {
-          title: "Create Station Failed",
-          message: err?.message || "Unexpected error",
-        });
+      console.error("Auto-generate on create failed:", err.message);
+      // do not stop user if api fails, station still created
     }
+
+    // go back to dashboard after creating station
+    return response.redirect("/dashboard");
   },
 
-
-  // DELETE A STATION
-  async deleteStation(req, res) {
-    const { id } = req.params; // station ID from URL
-
-    try {
-      // delete all reports associated with the station first
-      if (typeof reportStore.deleteByStation === "function") {
-        await reportStore.deleteByStation(id);
-      }
-
-      // then delete the station itself
-      await stationStore.delete(id);
-
-      return res.redirect("/dashboard");
-    } catch (e) {
-      console.error("deleteStation error:", e);
-      return res
-        .status(500)
-        .render("error-view", {
-          title: "Delete Failed",
-          message: e?.message || "Unexpected error",
-        });
-    }
+  // delete station by id from dashboard
+  async deleteStation(request, response) {
+    await stationStore.delete(request.params.id);
+    return response.redirect("/dashboard");
   },
 };
