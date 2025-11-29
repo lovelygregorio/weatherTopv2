@@ -102,4 +102,5 @@ OpenWeatherMap API Endpoints:
 
 
 --------------------
-2025AUGUST
+2025AUGUST v1
+2025NOVEMBER v2
