@@ -4,8 +4,11 @@ README.md
 
 Author: Lovely Gregorio
 Student: W20114829 
-Github:
-Deployed URL: 
+Github Url	   : https://github.com/lovelygregorio/weatherTopv2 
+Deployed URL		: https://weathertopapp2.onrender.com 
+	
+
+
 
 Current Version: 0.0.2
 Updated: Nov 2025
